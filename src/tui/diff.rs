@@ -107,7 +107,10 @@ impl DiffState {
             let s = c.setting;
             let text = vec![
                 Line::from(vec![s.label.bold(), format!("  {}  {} {}", s.id, s.domain, s.key).dark_gray()]),
-                Line::from(s.description),
+                Line::from(match s.allowed_text() {
+                    Some(allowed) => format!("{}  Allowed: {allowed}.", s.description),
+                    None => s.description.to_string(),
+                }),
             ];
             f.render_widget(Paragraph::new(text).wrap(Wrap { trim: true }), detail);
         }

@@ -1,4 +1,6 @@
-use crate::value::Kind;
+use anyhow::{Result, bail};
+
+use crate::value::{Kind, Value};
 
 /// A setting macpack knows how to read and write via `defaults`.
 #[derive(Debug)]
@@ -15,12 +17,80 @@ pub struct Setting {
     /// Process to `killall` so the change takes effect.
     pub restart: Option<&'static str>,
     pub description: &'static str,
+    pub allowed: Allowed,
+}
+
+/// Values a setting accepts beyond matching its kind.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Allowed {
+    Any,
+    Strings(&'static [&'static str]),
+    Ints(&'static [i64]),
+    /// Inclusive range for Int and Float settings.
+    Range(f64, f64),
 }
 
 impl Setting {
     const fn host(mut self) -> Self {
         self.host = true;
         self
+    }
+
+    const fn one_of(mut self, values: &'static [&'static str]) -> Self {
+        self.allowed = Allowed::Strings(values);
+        self
+    }
+
+    const fn ints(mut self, values: &'static [i64]) -> Self {
+        self.allowed = Allowed::Ints(values);
+        self
+    }
+
+    const fn range(mut self, min: f64, max: f64) -> Self {
+        self.allowed = Allowed::Range(min, max);
+        self
+    }
+
+    /// Checks `value` against the setting's kind and allowed values,
+    /// widening integers to floats where needed.
+    pub fn validate(&self, value: Value) -> Result<Value> {
+        let value = value.conform(self.kind)?;
+        let ok = match (self.allowed, &value) {
+            (Allowed::Any, _) => true,
+            (Allowed::Strings(list), Value::String(s)) => list.contains(&s.as_str()),
+            (Allowed::Ints(list), Value::Int(n)) => list.contains(n),
+            (Allowed::Range(min, max), Value::Int(n)) => (min..=max).contains(&(*n as f64)),
+            (Allowed::Range(min, max), Value::Float(f)) => (min..=max).contains(f),
+            _ => true,
+        };
+        if !ok {
+            bail!("{value} is not allowed; expected {}", self.allowed_text().unwrap_or_default());
+        }
+        Ok(value)
+    }
+
+    /// Human-readable allowed values, if restricted.
+    pub fn allowed_text(&self) -> Option<std::string::String> {
+        let join = |items: Vec<std::string::String>| items.join(", ");
+        match self.allowed {
+            Allowed::Any => None,
+            Allowed::Strings(list) => Some(format!("one of {}", join(list.iter().map(|s| s.to_string()).collect()))),
+            Allowed::Ints(list) => Some(format!("one of {}", join(list.iter().map(|n| n.to_string()).collect()))),
+            Allowed::Range(min, max) => Some(format!("{min} to {max}")),
+        }
+    }
+
+    /// The values the interface can cycle through: booleans or a fixed
+    /// list, followed by unset. Empty when the value is free-form.
+    pub fn choices(&self) -> Vec<Option<Value>> {
+        let mut out: Vec<Option<Value>> = match (self.kind, self.allowed) {
+            (Kind::Bool, _) => vec![Some(Value::Bool(true)), Some(Value::Bool(false))],
+            (_, Allowed::Strings(list)) => list.iter().map(|s| Some(Value::String(s.to_string()))).collect(),
+            (_, Allowed::Ints(list)) => list.iter().map(|n| Some(Value::Int(*n))).collect(),
+            _ => return Vec::new(),
+        };
+        out.push(None);
+        out
     }
 }
 
@@ -35,7 +105,7 @@ const fn s(
     restart: Option<&'static str>,
     description: &'static str,
 ) -> Setting {
-    Setting { id, category, label, domain, key, kind, host: false, restart, description }
+    Setting { id, category, label, domain, key, kind, host: false, restart, description, allowed: Allowed::Any }
 }
 
 const DOCK: Option<&str> = Some("Dock");
@@ -45,6 +115,7 @@ const GLOBAL: &str = "NSGlobalDomain";
 
 const HOT_CORNER: &str = "Action: 0 none, 2 Mission Control, 3 app windows, 4 Desktop, 5 start screen saver, \
      6 disable screen saver, 10 display sleep, 11 Launchpad, 12 Notification Center, 13 lock screen, 14 Quick Note.";
+const HOT_CORNER_ACTIONS: &[i64] = &[0, 1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14];
 const HOT_CORNER_MOD: &str =
     "Modifier required for the hot corner: 0 none, 131072 Shift, 262144 Control, 524288 Option, 1048576 Command.";
 
@@ -55,19 +126,19 @@ pub static CATALOG: &[Setting] = &[
     s("dock.autohide", "Dock", "Automatically hide the Dock", "com.apple.dock", "autohide", Bool, DOCK,
       "Hide the Dock until the pointer reaches the screen edge."),
     s("dock.autohide-delay", "Dock", "Auto-hide delay (seconds)", "com.apple.dock", "autohide-delay", Float, DOCK,
-      "Delay before the hidden Dock appears. 0 shows it instantly."),
+      "Delay before the hidden Dock appears. 0 shows it instantly.").range(0.0, 10.0),
     s("dock.autohide-time-modifier", "Dock", "Auto-hide animation speed", "com.apple.dock", "autohide-time-modifier", Float, DOCK,
-      "Duration multiplier of the show/hide animation. 0 disables the animation."),
+      "Duration multiplier of the show/hide animation. 0 disables the animation.").range(0.0, 10.0),
     s("dock.tilesize", "Dock", "Icon size", "com.apple.dock", "tilesize", Int, DOCK,
-      "Dock icon size in points (16–128)."),
+      "Dock icon size in points (16–128).").range(16.0, 128.0),
     s("dock.magnification", "Dock", "Magnification", "com.apple.dock", "magnification", Bool, DOCK,
       "Magnify icons under the pointer."),
     s("dock.largesize", "Dock", "Magnified icon size", "com.apple.dock", "largesize", Int, DOCK,
-      "Icon size in points when magnified (16–128)."),
+      "Icon size in points when magnified (16–128).").range(16.0, 128.0),
     s("dock.orientation", "Dock", "Position on screen", "com.apple.dock", "orientation", String, DOCK,
-      "One of: left, bottom, right."),
+      "One of: left, bottom, right.").one_of(&["left", "bottom", "right"]),
     s("dock.mineffect", "Dock", "Minimize effect", "com.apple.dock", "mineffect", String, DOCK,
-      "One of: genie, scale, suck."),
+      "One of: genie, scale, suck.").one_of(&["genie", "scale", "suck"]),
     s("dock.minimize-to-application", "Dock", "Minimize windows into app icon", "com.apple.dock", "minimize-to-application", Bool, DOCK,
       "Minimize windows into their application's icon instead of the right side of the Dock."),
     s("dock.show-recents", "Dock", "Show suggested and recent apps", "com.apple.dock", "show-recents", Bool, DOCK,
@@ -84,13 +155,13 @@ pub static CATALOG: &[Setting] = &[
     s("mission.spans-displays", "Mission Control", "Displays share one Space", "com.apple.spaces", "spans-displays", Bool, None,
       "true means displays do NOT have separate Spaces. Takes effect after logout."),
     // Hot corners
-    s("hotcorner.top-left", "Hot Corners", "Top-left action", "com.apple.dock", "wvous-tl-corner", Int, DOCK, HOT_CORNER),
+    s("hotcorner.top-left", "Hot Corners", "Top-left action", "com.apple.dock", "wvous-tl-corner", Int, DOCK, HOT_CORNER).ints(HOT_CORNER_ACTIONS),
     s("hotcorner.top-left-modifier", "Hot Corners", "Top-left modifier", "com.apple.dock", "wvous-tl-modifier", Int, DOCK, HOT_CORNER_MOD),
-    s("hotcorner.top-right", "Hot Corners", "Top-right action", "com.apple.dock", "wvous-tr-corner", Int, DOCK, HOT_CORNER),
+    s("hotcorner.top-right", "Hot Corners", "Top-right action", "com.apple.dock", "wvous-tr-corner", Int, DOCK, HOT_CORNER).ints(HOT_CORNER_ACTIONS),
     s("hotcorner.top-right-modifier", "Hot Corners", "Top-right modifier", "com.apple.dock", "wvous-tr-modifier", Int, DOCK, HOT_CORNER_MOD),
-    s("hotcorner.bottom-left", "Hot Corners", "Bottom-left action", "com.apple.dock", "wvous-bl-corner", Int, DOCK, HOT_CORNER),
+    s("hotcorner.bottom-left", "Hot Corners", "Bottom-left action", "com.apple.dock", "wvous-bl-corner", Int, DOCK, HOT_CORNER).ints(HOT_CORNER_ACTIONS),
     s("hotcorner.bottom-left-modifier", "Hot Corners", "Bottom-left modifier", "com.apple.dock", "wvous-bl-modifier", Int, DOCK, HOT_CORNER_MOD),
-    s("hotcorner.bottom-right", "Hot Corners", "Bottom-right action", "com.apple.dock", "wvous-br-corner", Int, DOCK, HOT_CORNER),
+    s("hotcorner.bottom-right", "Hot Corners", "Bottom-right action", "com.apple.dock", "wvous-br-corner", Int, DOCK, HOT_CORNER).ints(HOT_CORNER_ACTIONS),
     s("hotcorner.bottom-right-modifier", "Hot Corners", "Bottom-right modifier", "com.apple.dock", "wvous-br-modifier", Int, DOCK, HOT_CORNER_MOD),
     // Finder
     s("finder.show-hidden-files", "Finder", "Show hidden files", "com.apple.finder", "AppleShowAllFiles", Bool, FINDER,
@@ -104,15 +175,15 @@ pub static CATALOG: &[Setting] = &[
     s("finder.statusbar", "Finder", "Show status bar", "com.apple.finder", "ShowStatusBar", Bool, FINDER,
       "Show the status bar at the bottom of Finder windows."),
     s("finder.view-style", "Finder", "Default view style", "com.apple.finder", "FXPreferredViewStyle", String, FINDER,
-      "Nlsv = list, icnv = icons, clmv = columns, glyv = gallery."),
+      "Nlsv = list, icnv = icons, clmv = columns, glyv = gallery.").one_of(&["Nlsv", "icnv", "clmv", "glyv"]),
     s("finder.posix-title", "Finder", "Show full path in title", "com.apple.finder", "_FXShowPosixPathInTitle", Bool, FINDER,
       "Show the full POSIX path in Finder window titles."),
     s("finder.folders-first", "Finder", "Keep folders on top", "com.apple.finder", "_FXSortFoldersFirst", Bool, FINDER,
       "Sort folders before files in windows sorted by name."),
     s("finder.search-scope", "Finder", "Default search scope", "com.apple.finder", "FXDefaultSearchScope", String, FINDER,
-      "SCev = this Mac, SCcf = current folder, SCsp = previous scope."),
+      "SCev = this Mac, SCcf = current folder, SCsp = previous scope.").one_of(&["SCev", "SCcf", "SCsp"]),
     s("finder.new-window-target", "Finder", "New window location", "com.apple.finder", "NewWindowTarget", String, FINDER,
-      "PfHm = home, PfDe = Desktop, PfDo = Documents, PfCm = computer, PfAF = recents."),
+      "PfHm = home, PfDe = Desktop, PfDo = Documents, PfCm = computer, PfAF = recents.").one_of(&["PfHm", "PfDe", "PfDo", "PfCm", "PfAF", "PfLo"]),
     s("finder.desktop-icons", "Finder", "Show icons on Desktop", "com.apple.finder", "CreateDesktop", Bool, FINDER,
       "Show files and drives on the Desktop."),
     s("finder.no-ds-store-network", "Finder", "No .DS_Store on network volumes", "com.apple.desktopservices", "DSDontWriteNetworkStores", Bool, FINDER,
@@ -135,7 +206,7 @@ pub static CATALOG: &[Setting] = &[
     s("keyboard.smart-dashes", "Keyboard", "Smart dashes", GLOBAL, "NSAutomaticDashSubstitutionEnabled", Bool, None,
       "Replace double hyphens with dashes."),
     s("keyboard.full-keyboard-access", "Keyboard", "Keyboard navigation", GLOBAL, "AppleKeyboardUIMode", Int, None,
-      "2 or 3 lets Tab move focus between all controls; 0 only text fields and lists."),
+      "2 or 3 lets Tab move focus between all controls; 0 only text fields and lists.").ints(&[0, 1, 2, 3]),
     s("keyboard.fn-keys", "Keyboard", "Use F1, F2… as standard keys", GLOBAL, "com.apple.keyboard.fnState", Bool, None,
       "Function keys act as F-keys without holding fn. Takes effect after logout."),
     // Trackpad
@@ -146,12 +217,12 @@ pub static CATALOG: &[Setting] = &[
     s("trackpad.natural-scrolling", "Trackpad", "Natural scrolling", GLOBAL, "com.apple.swipescrolldirection", Bool, None,
       "Content follows finger movement. Takes effect after logout."),
     s("trackpad.speed", "Trackpad", "Tracking speed", GLOBAL, "com.apple.trackpad.scaling", Float, None,
-      "Pointer speed, 0 to 3. Takes effect after logout."),
+      "Pointer speed, 0 to 3. Takes effect after logout.").range(0.0, 3.0),
     // Screenshots
     s("screenshots.location", "Screenshots", "Save location", "com.apple.screencapture", "location", String, UI_SERVER,
       "Folder where screenshots are saved, e.g. ~/Desktop."),
     s("screenshots.type", "Screenshots", "File format", "com.apple.screencapture", "type", String, UI_SERVER,
-      "One of: png, jpg, pdf, tiff, heic."),
+      "One of: png, jpg, pdf, tiff, heic, gif, bmp.").one_of(&["png", "jpg", "pdf", "tiff", "heic", "gif", "bmp"]),
     s("screenshots.disable-shadow", "Screenshots", "No window shadow", "com.apple.screencapture", "disable-shadow", Bool, UI_SERVER,
       "Omit the drop shadow when capturing a window."),
     s("screenshots.show-thumbnail", "Screenshots", "Show floating thumbnail", "com.apple.screencapture", "show-thumbnail", Bool, UI_SERVER,
@@ -165,11 +236,11 @@ pub static CATALOG: &[Setting] = &[
       "Date format string, e.g. \"EEE d MMM HH:mm\"."),
     // Appearance
     s("appearance.style", "Appearance", "Dark mode", GLOBAL, "AppleInterfaceStyle", String, None,
-      "\"Dark\" for dark mode; unset means light mode. Restart apps to apply."),
+      "\"Dark\" for dark mode; unset means light mode. Restart apps to apply.").one_of(&["Dark"]),
     s("appearance.accent-color", "Appearance", "Accent color", GLOBAL, "AppleAccentColor", Int, None,
-      "-1 graphite, 0 red, 1 orange, 2 yellow, 3 green, 4 blue, 5 purple, 6 pink; unset means multicolor."),
+      "-1 graphite, 0 red, 1 orange, 2 yellow, 3 green, 4 blue, 5 purple, 6 pink; unset means multicolor.").ints(&[-1, 0, 1, 2, 3, 4, 5, 6]),
     s("appearance.scrollbars", "Appearance", "Show scroll bars", GLOBAL, "AppleShowScrollBars", String, None,
-      "One of: Automatic, WhenScrolling, Always."),
+      "One of: Automatic, WhenScrolling, Always.").one_of(&["Automatic", "WhenScrolling", "Always"]),
     // Windows & documents
     s("windows.save-to-cloud", "Windows & Documents", "Save new documents to iCloud", GLOBAL, "NSDocumentSaveNewDocumentsToCloud", Bool, None,
       "false makes save dialogs default to this Mac."),
@@ -212,5 +283,37 @@ mod tests {
         }
         assert!(find("dock.autohide").is_some());
         assert!(find("nope").is_none());
+    }
+
+    #[test]
+    fn validates_allowed_values() {
+        let orientation = find("dock.orientation").unwrap();
+        assert!(orientation.validate(Value::String("left".into())).is_ok());
+        let err = orientation.validate(Value::String("top".into())).unwrap_err().to_string();
+        assert!(err.contains("one of left, bottom, right"), "{err}");
+
+        let size = find("dock.tilesize").unwrap();
+        assert!(size.validate(Value::Int(64)).is_ok());
+        assert!(size.validate(Value::Int(200)).is_err());
+        let speed = find("trackpad.speed").unwrap();
+        assert_eq!(speed.validate(Value::Int(2)).unwrap(), Value::Float(2.0));
+        assert!(speed.validate(Value::Float(3.5)).is_err());
+        assert!(find("hotcorner.top-left").unwrap().validate(Value::Int(7)).is_err());
+        assert!(find("dock.autohide").unwrap().validate(Value::Int(1)).is_err());
+    }
+
+    #[test]
+    fn allowed_values_match_kind() {
+        for s in CATALOG {
+            match s.allowed {
+                Allowed::Strings(_) => assert_eq!(s.kind, Kind::String, "{}", s.id),
+                Allowed::Ints(_) => assert_eq!(s.kind, Kind::Int, "{}", s.id),
+                Allowed::Range(..) => assert!(matches!(s.kind, Kind::Int | Kind::Float), "{}", s.id),
+                Allowed::Any => {}
+            }
+        }
+        assert_eq!(find("dock.orientation").unwrap().choices().len(), 4);
+        assert_eq!(find("dock.autohide").unwrap().choices().len(), 3);
+        assert!(find("dock.tilesize").unwrap().choices().is_empty());
     }
 }

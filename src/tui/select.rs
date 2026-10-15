@@ -28,6 +28,8 @@ pub enum Outcome {
 pub struct SelectState {
     categories: Vec<&'static str>,
     values: HashMap<&'static str, Result<Option<Value>, String>>,
+    /// Values changed with `c`, exported instead of this Mac's value.
+    edits: HashMap<&'static str, Option<Value>>,
     selected: BTreeSet<&'static str>,
     cat: ListState,
     item: ListState,
@@ -45,6 +47,7 @@ impl SelectState {
         SelectState {
             categories: catalog::categories(),
             values,
+            edits: HashMap::new(),
             selected: BTreeSet::new(),
             cat: ListState::default().with_selected(Some(0)),
             item: ListState::default().with_selected(Some(0)),
@@ -59,8 +62,35 @@ impl SelectState {
         CATALOG
             .iter()
             .filter(|s| self.selected.contains(s.id))
-            .map(|s| (s, self.values[s.id].clone()))
+            .map(|s| (s, self.value(s)))
             .collect()
+    }
+
+    /// The value to export: an edit, or this Mac's value.
+    fn value(&self, s: &Setting) -> Result<Option<Value>, String> {
+        match self.edits.get(s.id) {
+            Some(v) => Ok(v.clone()),
+            None => self.values[s.id].clone(),
+        }
+    }
+
+    /// Moves the setting to its next allowed value and selects it.
+    fn cycle(&mut self, s: &'static Setting) {
+        let choices = s.choices();
+        if choices.is_empty() {
+            return;
+        }
+        let current = self.value(s).ok().flatten();
+        let next = match choices.iter().position(|c| *c == current) {
+            Some(i) => choices[(i + 1) % choices.len()].clone(),
+            None => choices[0].clone(),
+        };
+        if self.values[s.id].as_ref().is_ok_and(|v| *v == next) {
+            self.edits.remove(s.id);
+        } else {
+            self.edits.insert(s.id, next);
+        }
+        self.selected.insert(s.id);
     }
 
     fn visible(&self) -> Vec<&'static Setting> {
@@ -133,6 +163,11 @@ impl SelectState {
                 self.filter.clear();
             }
             KeyCode::Char('a') => self.toggle_all(),
+            KeyCode::Char('c') if self.focus == Focus::Settings || !self.filter.is_empty() => {
+                if let Some(s) = self.current() {
+                    self.cycle(s);
+                }
+            }
             KeyCode::Char('n') => self.selected.clear(),
             KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') if self.focus == Focus::Categories => {
                 self.focus = Focus::Settings
@@ -204,9 +239,10 @@ impl SelectState {
             .iter()
             .map(|s| {
                 let check = if self.selected.contains(s.id) { "[x] " } else { "[ ] " };
-                let value = match &self.values[s.id] {
-                    Ok(v) => Span::styled(value::show(v), Style::default().fg(if v.is_some() { Color::Cyan } else { Color::DarkGray })),
-                    Err(_) => Span::styled("unreadable", Style::default().fg(Color::Red)),
+                let value = match (self.edits.get(s.id), &self.values[s.id]) {
+                    (Some(v), _) => Span::styled(format!("{} (edited)", value::show(v)), Style::default().fg(Color::Yellow)),
+                    (None, Ok(v)) => Span::styled(value::show(v), Style::default().fg(if v.is_some() { Color::Cyan } else { Color::DarkGray })),
+                    (None, Err(_)) => Span::styled("unreadable", Style::default().fg(Color::Red)),
                 };
                 let label = if self.filter.is_empty() { s.label.to_string() } else { format!("{} › {}", s.category, s.label) };
                 Line::from(vec![
@@ -245,6 +281,9 @@ impl SelectState {
                     Line::from(s.description),
                     Line::from(format!("defaults{host} {} {}", s.domain, s.key).dark_gray()),
                 ];
+                if let Some(allowed) = s.allowed_text() {
+                    lines[2].push_span(format!("  · {allowed}").dark_gray());
+                }
                 if let Err(e) = &self.values[s.id] {
                     lines.push(Line::from(e.clone().red()));
                 }
@@ -257,7 +296,7 @@ impl SelectState {
         let keys: &[(&str, &str)] = if self.filtering {
             &[("type", "filter"), ("enter", "done"), ("esc", "clear")]
         } else {
-            &[("↑↓", "move"), ("←→", "pane"), ("space", "toggle"), ("a", "all"), ("n", "none"), ("/", "filter"), ("enter", "export"), ("esc", "back")]
+            &[("↑↓", "move"), ("←→", "pane"), ("space", "toggle"), ("c", "change value"), ("a", "all"), ("n", "none"), ("/", "filter"), ("enter", "export"), ("esc", "back")]
         };
         f.render_widget(hints(keys), footer);
     }

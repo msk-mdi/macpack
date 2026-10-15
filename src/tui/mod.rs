@@ -418,23 +418,31 @@ mod tests {
         press(&mut app, KeyCode::Enter);
         press(&mut app, KeyCode::Char(' '));
         assert!(render(&mut app).contains("2 selected"));
+        // Changing a value selects the setting and marks it as edited.
+        press(&mut app, KeyCode::Char('c'));
+        let screen = render(&mut app);
+        assert!(screen.contains("true (edited)"), "{screen}");
+        assert!(screen.contains("3 selected"), "{screen}");
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.toml");
         app.export_path = Some(path.clone());
         press(&mut app, KeyCode::Enter);
-        assert!(render(&mut app).contains("2 setting(s) will be saved"));
+        assert!(render(&mut app).contains("3 setting(s) will be saved"));
         press(&mut app, KeyCode::Enter);
-        assert!(render(&mut app).contains("Saved 2 setting(s)"));
+        assert!(render(&mut app).contains("Saved 3 setting(s)"));
+        let saved = Profile::load(&path).unwrap();
+        let edited = saved.settings.iter().find(|e| e.id == "finder.show-extensions").unwrap();
+        assert_eq!(edited.value, Some(Value::Bool(true)));
 
         // The saved profile opens as a diff against a Mac that differs.
         let other = MemPrefs::default();
         let app2 = App { prefs: &other, screen: Screen::Home(home_state()), quit: false, export_path: None };
         let mut app2 = App { screen: app2.open_profile(&path, false), ..app2 };
         let screen = render(&mut app2);
-        assert!(screen.contains("1 of 1 changes selected"), "{screen}");
+        assert!(screen.contains("2 of 2 changes selected"), "{screen}");
         press(&mut app2, KeyCode::Char(' '));
-        assert!(render(&mut app2).contains("0 of 1 changes selected"));
+        assert!(render(&mut app2).contains("1 of 2 changes selected"));
         press(&mut app2, KeyCode::Esc);
         assert!(render(&mut app2).contains("Apply a profile"));
     }

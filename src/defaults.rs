@@ -57,7 +57,7 @@ impl Prefs for DefaultsCli {
     }
 
     fn write(&self, setting: &Setting, value: &Value) -> Result<()> {
-        let value = value.clone().conform(setting.kind)?;
+        let value = setting.validate(value.clone())?;
         let args = [setting.kind.defaults_flag().to_string(), value.defaults_arg()];
         let out = Self::run(setting, "write", &args)?;
         if !out.status.success() {
@@ -160,6 +160,7 @@ mod tests {
             host: false,
             restart: None,
             description: "",
+            allowed: crate::catalog::Allowed::Any,
         }
     }
 

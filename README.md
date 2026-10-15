@@ -35,16 +35,23 @@ macpack restore              # review and undo the most recent apply
 Non-interactive, for scripts:
 
 ```sh
-macpack list [--category Dock]
+macpack list [--category Dock] [--json]
 macpack export --all -o ~/my-mac.toml
+macpack export --changed -o ~/my-mac.toml     # only settings you've changed from the default
 macpack export --ids dock,finder.pathbar,keyboard.key-repeat -o ~/my-mac.toml
 macpack apply ~/my-mac.toml --dry-run
 macpack apply ~/my-mac.toml --yes [--no-restart]
-macpack backups
+macpack check ~/my-mac.toml [--quiet]         # exit status 1 if this Mac differs
+macpack get dock.tilesize
+macpack set dock.tilesize 48                  # backs up the old value first
+macpack set dock.orientation --unset
+macpack backups [--prune 10]                  # --prune keeps only the newest 10
 macpack restore 20261014-221000.123 --yes
 ```
 
-`--ids` takes setting ids or whole category names (see `macpack list`).
+`--ids` takes setting ids or whole category names (see `macpack list`). `--changed` combines with `--ids`; on its own it covers every setting.
+
+Shell completions: `macpack completions zsh > ~/.zfunc/_macpack` (also bash, fish, elvish, powershell).
 
 ### Picker keys
 
@@ -53,6 +60,7 @@ macpack restore 20261014-221000.123 --yes
 | ↑ ↓ / j k | move |
 | ← → / Tab | switch between categories and settings |
 | Space | toggle setting (on a category: toggle the whole category) |
+| c | change the value to export (cycles through allowed values and unset) |
 | a / n | select all in view / clear selection |
 | / | filter across all categories |
 | Enter | continue |
@@ -75,7 +83,7 @@ value = true
 id = "dock.orientation"   # no value: key is unset, so the system default applies
 ```
 
-Settings are referenced by macpack id, not raw domain/key, so a profile can only ever touch settings in macpack's catalog ([src/catalog.rs](src/catalog.rs)). Unknown ids and values of the wrong type are reported and skipped.
+Settings are referenced by macpack id, not raw domain/key, so a profile can only ever touch settings in macpack's catalog ([src/catalog.rs](src/catalog.rs)). Unknown ids, values of the wrong type and values outside a setting's allowed list or range (e.g. `dock.orientation = "top"`) are reported and skipped.
 
 ## Applying
 
@@ -86,7 +94,7 @@ Settings are referenced by macpack id, not raw domain/key, so a profile can only
 
 ## Adding settings
 
-Add an entry to `CATALOG` in [src/catalog.rs](src/catalog.rs): a namespaced id, category, label, preference domain and key, value kind, the process to restart (if any) and a one-line description. Use `.host()` for `-currentHost` preferences.
+Add an entry to `CATALOG` in [src/catalog.rs](src/catalog.rs): a namespaced id, category, label, preference domain and key, value kind, the process to restart (if any) and a one-line description. Use `.host()` for `-currentHost` preferences, and `.one_of(&[…])`, `.ints(&[…])` or `.range(min, max)` to restrict the values it accepts.
 
 ## Development
 
@@ -101,6 +109,13 @@ Bump `version` in `Cargo.toml`, commit, then push a matching tag:
 
 ```sh
 git tag v1.0.1 && git push origin v1.0.1
+```
+
+In the Homebrew formula, install completions and the man page with:
+
+```ruby
+generate_completions_from_executable(bin/"macpack", "completions")
+(man1/"macpack.1").write Utils.safe_popen_read(bin/"macpack", "man")
 ```
 
 The [release workflow](.github/workflows/release.yml) runs the tests, builds Apple silicon, Intel and universal binaries, and publishes them with checksums to GitHub Releases, then updates the formula in [msk-mdi/homebrew-tap](https://github.com/msk-mdi/homebrew-tap) (needs a `HOMEBREW_TAP_TOKEN` secret with write access to that repo).

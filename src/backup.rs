@@ -38,6 +38,16 @@ pub fn list(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+/// Deletes all but the newest `keep` backups in `dir`, returning the
+/// deleted paths.
+pub fn prune(dir: &Path, keep: usize) -> Result<Vec<PathBuf>> {
+    let old: Vec<PathBuf> = list(dir)?.into_iter().skip(keep).collect();
+    for p in &old {
+        std::fs::remove_file(p).with_context(|| format!("can't delete {}", p.display()))?;
+    }
+    Ok(old)
+}
+
 /// Finds a backup by `latest`, file name (with or without `.toml`) or path.
 pub fn find(dir: &Path, name: &str) -> Result<PathBuf> {
     let all = list(dir)?;
@@ -71,5 +81,10 @@ mod tests {
         let stem = a.file_stem().unwrap().to_str().unwrap();
         assert_eq!(find(dir.path(), stem).unwrap(), a);
         assert!(find(dir.path(), "nope").is_err());
+
+        let c = save(dir.path(), &Profile::new([])).unwrap();
+        assert_eq!(prune(dir.path(), 2).unwrap(), vec![a]);
+        assert_eq!(list(dir.path()).unwrap(), vec![c, b]);
+        assert!(prune(dir.path(), 5).unwrap().is_empty());
     }
 }

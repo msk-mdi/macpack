@@ -96,7 +96,7 @@ impl Profile {
                 warnings.push(format!("duplicate setting {:?} skipped", entry.id));
                 continue;
             }
-            match entry.value.clone().map(|v| v.conform(setting.kind)).transpose() {
+            match entry.value.clone().map(|v| setting.validate(v)).transpose() {
                 Ok(v) => out.push((setting, v)),
                 Err(e) => warnings.push(format!("{}: {e}", entry.id)),
             }
