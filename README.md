@@ -1,7 +1,5 @@
 # macpack
 
-Pick macOS settings in a terminal UI, save them to a portable profile, and apply that profile on another Mac — with a diff to review first and an automatic backup so every apply can be undone.
-
 ## Install
 
 ```sh
