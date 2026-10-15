@@ -2,7 +2,13 @@
 
 ## Install
 
-Download the universal binary (Apple silicon and Intel) from the [latest release](https://github.com/msk-mdi/macpack/releases/latest):
+With Homebrew:
+
+```sh
+brew install msk-mdi/tap/macpack
+```
+
+Or download the universal binary (Apple silicon and Intel) from the [latest release](https://github.com/msk-mdi/macpack/releases/latest):
 
 ```sh
 curl -L https://github.com/msk-mdi/macpack/releases/latest/download/macpack-v1.0.0-universal-apple-darwin.tar.gz | tar -xz
@@ -97,4 +103,4 @@ Bump `version` in `Cargo.toml`, commit, then push a matching tag:
 git tag v1.0.1 && git push origin v1.0.1
 ```
 
-The [release workflow](.github/workflows/release.yml) runs the tests, builds Apple silicon, Intel and universal binaries, and publishes them with checksums to GitHub Releases.
+The [release workflow](.github/workflows/release.yml) runs the tests, builds Apple silicon, Intel and universal binaries, and publishes them with checksums to GitHub Releases, then updates the formula in [msk-mdi/homebrew-tap](https://github.com/msk-mdi/homebrew-tap) (needs a `HOMEBREW_TAP_TOKEN` secret with write access to that repo).
