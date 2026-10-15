@@ -1,0 +1,59 @@
+name: Release
+
+# Push a tag like v1.2.3 (matching the version in Cargo.toml) to publish a release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --target aarch64-apple-darwin,x86_64-apple-darwin
+          rustup default stable
+
+      - name: Check tag matches Cargo.toml
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $version"
+            exit 1
+          fi
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build
+        run: |
+          cargo build --locked --release --target aarch64-apple-darwin
+          cargo build --locked --release --target x86_64-apple-darwin
+
+      - name: Package
+        run: |
+          mkdir -p dist universal
+          lipo -create -output universal/macpack \
+            target/aarch64-apple-darwin/release/macpack \
+            target/x86_64-apple-darwin/release/macpack
+          package() { # name, dir containing the binary
+            tar -czf "dist/macpack-$GITHUB_REF_NAME-$1.tar.gz" -C "$2" macpack
+          }
+          package universal-apple-darwin universal
+          package aarch64-apple-darwin target/aarch64-apple-darwin/release
+          package x86_64-apple-darwin target/x86_64-apple-darwin/release
+          (cd dist && shasum -a 256 *.tar.gz > SHA256SUMS)
+          cat dist/SHA256SUMS
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "macpack $GITHUB_REF_NAME" \
+            --generate-notes

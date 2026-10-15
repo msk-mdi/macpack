@@ -2,8 +2,19 @@
 
 ## Install
 
+Download the universal binary (Apple silicon and Intel) from the [latest release](https://github.com/msk-mdi/macpack/releases/latest):
+
 ```sh
-cargo install --path .
+curl -L https://github.com/msk-mdi/macpack/releases/latest/download/macpack-v1.0.0-universal-apple-darwin.tar.gz | tar -xz
+sudo mv macpack /usr/local/bin/
+```
+
+The binary isn't notarized; if you download it with a browser, clear the quarantine flag with `xattr -d com.apple.quarantine macpack`.
+
+Or build from source:
+
+```sh
+cargo install --git https://github.com/msk-mdi/macpack
 ```
 
 ## Use
@@ -77,3 +88,13 @@ Add an entry to `CATALOG` in [src/catalog.rs](src/catalog.rs): a namespaced id, 
 cargo test     # includes a round-trip against the real `defaults` in the com.macpack.selftest domain
 cargo clippy --all-targets
 ```
+
+### Releasing
+
+Bump `version` in `Cargo.toml`, commit, then push a matching tag:
+
+```sh
+git tag v1.0.1 && git push origin v1.0.1
+```
+
+The [release workflow](.github/workflows/release.yml) runs the tests, builds Apple silicon, Intel and universal binaries, and publishes them with checksums to GitHub Releases.
