@@ -11,7 +11,7 @@ brew install msk-mdi/tap/macpack
 Or download the universal binary (Apple silicon and Intel) from the [latest release](https://github.com/msk-mdi/macpack/releases/latest):
 
 ```sh
-curl -L https://github.com/msk-mdi/macpack/releases/latest/download/macpack-v1.0.0-universal-apple-darwin.tar.gz | tar -xz
+curl -L https://github.com/msk-mdi/macpack/releases/latest/download/macpack-v1.1.0-universal-apple-darwin.tar.gz | tar -xz
 sudo mv macpack /usr/local/bin/
 ```
 
