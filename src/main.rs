@@ -2,6 +2,7 @@ mod apply;
 mod backup;
 mod catalog;
 mod defaults;
+mod layout;
 mod profile;
 mod tui;
 mod value;
@@ -59,7 +60,7 @@ enum Command {
         /// Only print what would change.
         #[arg(long)]
         dry_run: bool,
-        /// Don't restart Dock, Finder or SystemUIServer afterwards.
+        /// Don't restart Dock, Finder, SystemUIServer or ControlCenter afterwards.
         #[arg(long)]
         no_restart: bool,
     },
@@ -87,7 +88,7 @@ enum Command {
         /// Apply every change without asking.
         #[arg(short, long, conflicts_with = "dry_run")]
         yes: bool,
-        /// Don't restart Dock, Finder or SystemUIServer afterwards.
+        /// Don't restart Dock, Finder, SystemUIServer or ControlCenter afterwards.
         #[arg(long)]
         no_restart: bool,
     },

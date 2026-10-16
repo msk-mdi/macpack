@@ -10,6 +10,8 @@ pub enum Kind {
     Int,
     Float,
     String,
+    /// Control Center layout: text in profiles, JSON in the store (see `layout`).
+    Layout,
 }
 
 impl Kind {
@@ -20,6 +22,7 @@ impl Kind {
             Kind::Int => "-int",
             Kind::Float => "-float",
             Kind::String => "-string",
+            Kind::Layout => "-data",
         }
     }
 }
@@ -56,6 +59,7 @@ impl Value {
                 _ => bail!("expected a number, got {raw:?}"),
             },
             Kind::String => Value::String(raw.to_string()),
+            Kind::Layout => Value::String(crate::layout::normalize(raw)?),
         })
     }
 
@@ -68,6 +72,7 @@ impl Value {
             (Kind::Float, v @ Value::Float(_)) => v,
             (Kind::Float, Value::Int(n)) => Value::Float(n as f64),
             (Kind::String, v @ Value::String(_)) => v,
+            (Kind::Layout, Value::String(s)) => Value::String(crate::layout::normalize(&s)?),
             (kind, v) => bail!("expected {kind:?}, got {v}"),
         })
     }

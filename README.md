@@ -83,6 +83,16 @@ value = true
 id = "dock.orientation"   # no value: key is unset, so the system default applies
 ```
 
+The Control Center layout (macOS 26 and later) is stored as one setting, `controlcenter.layout`, listing each tile's module, size in grid cells and position on the 4-column grid:
+
+```toml
+[[settings]]
+id = "controlcenter.layout"
+value = "WiFi 2x1 at 0,0; NowPlaying 2x2 at 2,0; Bluetooth 2x1 at 0,1; Display 4x1 at 0,2; Sound 4x1 at 0,3"
+```
+
+Tiles that overlap or run off the grid are rejected. Controls added by other apps can't be transferred, so a layout containing them is skipped with a warning rather than overwritten. Which Control Center items appear in the menu bar is covered by the `menubar.show-*` settings.
+
 Settings are referenced by macpack id, not raw domain/key, so a profile can only ever touch settings in macpack's catalog ([src/catalog.rs](src/catalog.rs)). Unknown ids, values of the wrong type and values outside a setting's allowed list or range (e.g. `dock.orientation = "top"`) are reported and skipped.
 
 ## Applying
@@ -90,7 +100,7 @@ Settings are referenced by macpack id, not raw domain/key, so a profile can only
 1. Each setting in the profile is compared with this Mac; matching ones are left alone.
 2. You review the changes and untick any you don't want.
 3. The current values of the selected settings are saved to `~/Library/Application Support/macpack/backups/` — a backup is itself a profile, so restoring is just applying it.
-4. Values are written with `defaults write` (or `defaults delete` for unset), then Dock, Finder or SystemUIServer are restarted as needed. Keyboard, trackpad and appearance settings may need a logout or app relaunch.
+4. Values are written with `defaults write` (or `defaults delete` for unset), then Dock, Finder, SystemUIServer or ControlCenter are restarted as needed. Keyboard, trackpad and appearance settings may need a logout or app relaunch.
 
 ## Adding settings
 

@@ -111,6 +111,10 @@ const fn s(
 const DOCK: Option<&str> = Some("Dock");
 const FINDER: Option<&str> = Some("Finder");
 const UI_SERVER: Option<&str> = Some("SystemUIServer");
+const CONTROL_CENTER: Option<&str> = Some("ControlCenter");
+const CC: &str = "com.apple.controlcenter";
+const MENU_ITEM: &str = "18 shows it in the menu bar, 8 or 24 hides it; unset uses the system default.";
+const MENU_ITEM_VALUES: &[i64] = &[8, 18, 24];
 const GLOBAL: &str = "NSGlobalDomain";
 
 const HOT_CORNER: &str = "Action: 0 none, 2 Mission Control, 3 app windows, 4 Desktop, 5 start screen saver, \
@@ -119,7 +123,7 @@ const HOT_CORNER_ACTIONS: &[i64] = &[0, 1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14];
 const HOT_CORNER_MOD: &str =
     "Modifier required for the hot corner: 0 none, 131072 Shift, 262144 Control, 524288 Option, 1048576 Command.";
 
-use Kind::{Bool, Float, Int, String};
+use Kind::{Bool, Float, Int, Layout, String};
 
 pub static CATALOG: &[Setting] = &[
     // Dock
@@ -234,6 +238,31 @@ pub static CATALOG: &[Setting] = &[
       "Display seconds in the menu bar clock."),
     s("menubar.clock-format", "Menu Bar", "Clock format", "com.apple.menuextra.clock", "DateFormat", String, UI_SERVER,
       "Date format string, e.g. \"EEE d MMM HH:mm\"."),
+    s("menubar.show-wifi", "Menu Bar", "Show Wi-Fi", CC, "WiFi", Int, CONTROL_CENTER, MENU_ITEM)
+      .ints(MENU_ITEM_VALUES).host(),
+    s("menubar.show-bluetooth", "Menu Bar", "Show Bluetooth", CC, "Bluetooth", Int, CONTROL_CENTER, MENU_ITEM)
+      .ints(MENU_ITEM_VALUES).host(),
+    s("menubar.show-airdrop", "Menu Bar", "Show AirDrop", CC, "AirDrop", Int, CONTROL_CENTER, MENU_ITEM)
+      .ints(MENU_ITEM_VALUES).host(),
+    s("menubar.show-focus", "Menu Bar", "Show Focus", CC, "FocusModes", Int, CONTROL_CENTER, MENU_ITEM)
+      .ints(MENU_ITEM_VALUES).host(),
+    s("menubar.show-screen-mirroring", "Menu Bar", "Show Screen Mirroring", CC, "ScreenMirroring", Int, CONTROL_CENTER, MENU_ITEM)
+      .ints(MENU_ITEM_VALUES).host(),
+    s("menubar.show-display", "Menu Bar", "Show Display", CC, "Display", Int, CONTROL_CENTER, MENU_ITEM)
+      .ints(MENU_ITEM_VALUES).host(),
+    s("menubar.show-sound", "Menu Bar", "Show Sound", CC, "Sound", Int, CONTROL_CENTER, MENU_ITEM)
+      .ints(MENU_ITEM_VALUES).host(),
+    s("menubar.show-now-playing", "Menu Bar", "Show Now Playing", CC, "NowPlaying", Int, CONTROL_CENTER, MENU_ITEM)
+      .ints(MENU_ITEM_VALUES).host(),
+    s("menubar.show-keyboard-brightness", "Menu Bar", "Show Keyboard Brightness", CC, "KeyboardBrightness", Int, CONTROL_CENTER, MENU_ITEM)
+      .ints(MENU_ITEM_VALUES).host(),
+    s("menubar.show-battery", "Menu Bar", "Show Battery", CC, "Battery", Int, CONTROL_CENTER, MENU_ITEM)
+      .ints(MENU_ITEM_VALUES).host(),
+    s("menubar.show-spotlight", "Menu Bar", "Show Spotlight", CC, "Spotlight", Int, CONTROL_CENTER, MENU_ITEM)
+      .ints(MENU_ITEM_VALUES).host(),
+    // Control Center
+    s("controlcenter.layout", "Control Center", "Control Center layout", "com.apple.controlcenter.bentoboxes", "boxes", Layout, CONTROL_CENTER,
+      "Tiles as \"<Module> <W>x<H> at <X>,<Y>\", separated by \"; \" on a 4-column grid. macOS 26 or later.").host(),
     // Appearance
     s("appearance.style", "Appearance", "Dark mode", GLOBAL, "AppleInterfaceStyle", String, None,
       "\"Dark\" for dark mode; unset means light mode. Restart apps to apply.").one_of(&["Dark"]),

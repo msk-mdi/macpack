@@ -3,7 +3,8 @@ use std::process::{Command, Output};
 use anyhow::{Context, Result, bail};
 
 use crate::catalog::Setting;
-use crate::value::Value;
+use crate::layout;
+use crate::value::{Kind, Value};
 
 /// Access to the preference store, so apply logic can be tested without
 /// touching the real system.
@@ -36,6 +37,26 @@ impl DefaultsCli {
         cmd.args([verb, setting.domain, setting.key]).args(extra);
         cmd.output().context("failed to run `defaults`")
     }
+
+    /// Reads a data value. `defaults read` only prints a truncated summary
+    /// of data, so this exports the whole domain instead.
+    fn read_data(setting: &Setting) -> Result<Option<Vec<u8>>> {
+        let mut cmd = Command::new("defaults");
+        if setting.host {
+            cmd.arg("-currentHost");
+        }
+        let out = cmd.args(["export", setting.domain, "-"]).output().context("failed to run `defaults`")?;
+        if !out.status.success() {
+            bail!("defaults export {}: {}", setting.domain, String::from_utf8_lossy(&out.stderr).trim());
+        }
+        let domain = plist::Value::from_reader_xml(&out.stdout[..])
+            .with_context(|| format!("can't parse the {} domain", setting.domain))?;
+        match domain.as_dictionary().and_then(|d| d.get(setting.key)) {
+            None => Ok(None),
+            Some(plist::Value::Data(bytes)) => Ok(Some(bytes.clone())),
+            Some(_) => bail!("{} {} is not data", setting.domain, setting.key),
+        }
+    }
 }
 
 fn is_missing(stderr: &str) -> bool {
@@ -44,6 +65,11 @@ fn is_missing(stderr: &str) -> bool {
 
 impl Prefs for DefaultsCli {
     fn read(&self, setting: &Setting) -> Result<Option<Value>> {
+        if setting.kind == Kind::Layout {
+            return Self::read_data(setting)?
+                .map(|bytes| Ok(Value::String(layout::format(&layout::decode(&bytes)?))))
+                .transpose();
+        }
         let out = Self::run(setting, "read", &[])?;
         if !out.status.success() {
             let stderr = String::from_utf8_lossy(&out.stderr);
@@ -58,7 +84,13 @@ impl Prefs for DefaultsCli {
 
     fn write(&self, setting: &Setting, value: &Value) -> Result<()> {
         let value = setting.validate(value.clone())?;
-        let args = [setting.kind.defaults_flag().to_string(), value.defaults_arg()];
+        let arg = match (setting.kind, &value) {
+            (Kind::Layout, Value::String(text)) => {
+                layout::encode(&layout::parse(text)?)?.iter().map(|b| format!("{b:02x}")).collect()
+            }
+            _ => value.defaults_arg(),
+        };
+        let args = [setting.kind.defaults_flag().to_string(), arg];
         let out = Self::run(setting, "write", &args)?;
         if !out.status.success() {
             bail!(
